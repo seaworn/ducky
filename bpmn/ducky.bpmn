@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_0wr6eyr" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="4.12.0" modeler:executionPlatform="Camunda Platform" modeler:executionPlatformVersion="7.15.0">
+  <bpmn:process id="ducky" name="Ducky" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_198qs8m</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="Flow_198qs8m" sourceRef="StartEvent_1" targetRef="Activity_07fx4xs" />
+    <bpmn:userTask id="Activity_07fx4xs" name="Interview Client" camunda:formKey="duck_application">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="variety" label="What is your favourite kind of duck?" type="enum">
+            <camunda:value id="Mallard" name="Mallard" />
+            <camunda:value id="Wood_Duck" name="Wood Duck" />
+            <camunda:value id="Widgeon" name="Widgeon" />
+            <camunda:value id="Dead" name="Dead Ducks" />
+          </camunda:formField>
+          <camunda:formField id="tolerant" label="Do you mind finding random feathers and eggs in your house? " type="boolean" />
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_198qs8m</bpmn:incoming>
+      <bpmn:outgoing>Flow_167co58</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="Flow_167co58" sourceRef="Activity_07fx4xs" targetRef="Activity_08mf40y" />
+    <bpmn:scriptTask id="Activity_08mf40y" name="Determine Duck Worthiness">
+      <bpmn:incoming>Flow_167co58</bpmn:incoming>
+      <bpmn:outgoing>Flow_0s0fp9k</bpmn:outgoing>
+      <bpmn:script>if not tolerant or variety == 'dead':
+    is_safe = False
+else:
+    is_safe = True</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:exclusiveGateway id="Gateway_17ojfsr" name="Will real duck be safe?">
+      <bpmn:incoming>Flow_0s0fp9k</bpmn:incoming>
+      <bpmn:outgoing>Flow_1nqwdpj</bpmn:outgoing>
+      <bpmn:outgoing>Flow_1e1j5jx</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_0s0fp9k" sourceRef="Activity_08mf40y" targetRef="Gateway_17ojfsr" />
+    <bpmn:sequenceFlow id="Flow_1nqwdpj" name="Yes" sourceRef="Gateway_17ojfsr" targetRef="Activity_1xzemmm">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">is_safe == True</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_1e1j5jx" name="No" sourceRef="Gateway_17ojfsr" targetRef="Activity_1vj3408">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">is_safe == False</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:endEvent id="Event_1sio60c">
+      <bpmn:incoming>Flow_060sejh</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_060sejh" sourceRef="Activity_1xzemmm" targetRef="Event_1sio60c" />
+    <bpmn:endEvent id="Event_1fjllrj">
+      <bpmn:incoming>Flow_0mgzwnw</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_0mgzwnw" sourceRef="Activity_1vj3408" targetRef="Event_1fjllrj" />
+    <bpmn:scriptTask id="Activity_1vj3408" name="Deliver Decoy Duck">
+      <bpmn:incoming>Flow_1e1j5jx</bpmn:incoming>
+      <bpmn:outgoing>Flow_0mgzwnw</bpmn:outgoing>
+      <bpmn:script>print('Delivering decoy duck')</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:scriptTask id="Activity_1xzemmm" name="Deliver Real Duck">
+      <bpmn:incoming>Flow_1nqwdpj</bpmn:incoming>
+      <bpmn:outgoing>Flow_060sejh</bpmn:outgoing>
+      <bpmn:script>print('Delivering real duck')</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:textAnnotation id="TextAnnotation_02zxvgs">
+      <bpmn:text>Receice request for duck</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_0jgddbc" sourceRef="StartEvent_1" targetRef="TextAnnotation_02zxvgs" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="ducky">
+      <bpmndi:BPMNEdge id="Flow_0mgzwnw_di" bpmnElement="Flow_0mgzwnw">
+        <di:waypoint x="810" y="290" />
+        <di:waypoint x="882" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_060sejh_di" bpmnElement="Flow_060sejh">
+        <di:waypoint x="810" y="177" />
+        <di:waypoint x="882" y="177" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1e1j5jx_di" bpmnElement="Flow_1e1j5jx">
+        <di:waypoint x="620" y="202" />
+        <di:waypoint x="620" y="290" />
+        <di:waypoint x="710" y="290" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="628" y="243" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1nqwdpj_di" bpmnElement="Flow_1nqwdpj">
+        <di:waypoint x="645" y="177" />
+        <di:waypoint x="710" y="177" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="668" y="159" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0s0fp9k_di" bpmnElement="Flow_0s0fp9k">
+        <di:waypoint x="530" y="177" />
+        <di:waypoint x="595" y="177" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_167co58_di" bpmnElement="Flow_167co58">
+        <di:waypoint x="370" y="177" />
+        <di:waypoint x="430" y="177" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_198qs8m_di" bpmnElement="Flow_198qs8m">
+        <di:waypoint x="215" y="177" />
+        <di:waypoint x="270" y="177" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="_BPMNShape_StartEvent_2" bpmnElement="StartEvent_1">
+        <dc:Bounds x="179" y="159" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0cocmow_di" bpmnElement="Activity_07fx4xs">
+        <dc:Bounds x="270" y="137" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1xkydom_di" bpmnElement="Activity_08mf40y">
+        <dc:Bounds x="430" y="137" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_17ojfsr_di" bpmnElement="Gateway_17ojfsr" isMarkerVisible="true">
+        <dc:Bounds x="595" y="152" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="580" y="122" width="81" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1sio60c_di" bpmnElement="Event_1sio60c">
+        <dc:Bounds x="882" y="159" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1fjllrj_di" bpmnElement="Event_1fjllrj">
+        <dc:Bounds x="882" y="272" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_194gdt6_di" bpmnElement="Activity_1vj3408">
+        <dc:Bounds x="710" y="250" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_165z3we_di" bpmnElement="Activity_1xzemmm">
+        <dc:Bounds x="710" y="137" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAnnotation_02zxvgs_di" bpmnElement="TextAnnotation_02zxvgs">
+        <dc:Bounds x="220" y="70" width="100" height="54" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Association_0jgddbc_di" bpmnElement="Association_0jgddbc">
+        <di:waypoint x="208" y="163" />
+        <di:waypoint x="239" y="124" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
