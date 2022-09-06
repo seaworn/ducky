@@ -11,7 +11,7 @@ from db import Base, get_session
 class Repo:
     """Data Access Layer"""
 
-    def __init__(self, model: Base, session: AsyncSession) -> None:
+    def __init__(self, *, model: Base, session: AsyncSession) -> None:
         self.Model = model
         self.session = session
 
@@ -60,12 +60,15 @@ def has_repo(repo_class: Optional[str] = None) -> Callable[[Base], Base]:
 
 class RepoManager:
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, *, session: AsyncSession) -> None:
         self.session = session
 
     def get_repo(self, model: Base) -> Repo:
-        return model.__repo__(model, self.session)
+        repo = getattr(model, '__repo__', None)
+        if repo and issubclass(repo, Repo):
+            return repo(model=model, session=self.session)
+        raise TypeError(f'Repository for {model.__name__} is not properly configured')
 
 
 def get_repo_manager(session: AsyncSession = Depends(get_session)) -> RepoManager:
-    return RepoManager(session)
+    return RepoManager(session=session)
