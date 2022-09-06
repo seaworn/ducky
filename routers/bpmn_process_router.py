@@ -30,11 +30,15 @@ async def create(bpmn_process_schema: BpmnProcessSchema = Body(...), repo_manage
     return await repo.create(dict(bpmn_process_schema))
 
 
-@router.put('/{id}')
-async def update():
-    pass
+@router.put('/{id}', response_model=BpmnProcessSchema)
+async def update(id: int, bpmn_process_schema: BpmnProcessSchema = Body(...), repo_manager: RepoManager = Depends(get_repo_manager)):
+    logger.info('Updating process...')
+    repo = repo_manager.get_repo(BpmnProcess)
+    return await repo.update(id, dict(bpmn_process_schema))
 
 
 @router.delete('/{id}')
-async def delete():
-    pass
+async def delete(id:int, repo_manager: RepoManager = Depends(get_repo_manager)):
+    logger.info('Deleting process...')
+    repo = repo_manager.get_repo(BpmnProcess)
+    return await repo.delete(id)

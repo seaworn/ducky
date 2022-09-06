@@ -1,9 +1,8 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import DBAPIError
 from fastapi import Depends
 
 from db import Base, get_session
@@ -13,36 +12,29 @@ class Repo:
     """Data Access Layer"""
 
     def __init__(self, model: Base, session: AsyncSession) -> None:
-        self.model = model
+        self.Model = model
         self.session = session
 
     async def all(self) -> List[Base]:
-        return (await self.session.execute(select(self.model))).scalars().all()
+        return (await self.session.execute(select(self.Model))).scalars().all()
 
     async def get(self, id: int) -> Base:
-        return await self.session.get(self.model, id)
+        return await self.session.get(self.Model, id)
 
-    async def find_one_by(self, params: Dict[str, Any]):
-        return (await self.session.execute(select(self.model).filter_by(**params))).scalar_one_or_none()
+    async def find_one(self, params: Dict[str, Any]):
+        return (await self.session.execute(select(self.Model).filter_by(**params))).scalar_one_or_none()
 
     async def create(self, params: Dict[str, Any]) -> Base:
-        try:
-            model = self.model(**params)
-            self.session.add(model)
-            await self.session.commit()
-            return model
-        except DBAPIError as e:
-            await self.session.rollback()
-            raise e
+        model = self.Model(**params)
+        self.session.add(model)
+        return model
 
     async def update(self, id: int, params: Dict[str, Any]) -> Base:
-        try:
-            await self.session.execute(update(self.model).where(self.model.id == id).values(**params))
-            await self.session.commit()
-            return self.get(id)
-        except DBAPIError as e:
-            await self.session.rollback()
-            raise e
+        await self.session.execute(update(self.Model).where(self.Model.id == id).values(**params))
+        return await self.get(id)
+
+    async def delete(self, id: int):
+        return (await self.session.execute(delete(self.Model).where(self.Model.id == id))).rowcount
 
 
 class BpmnProcessRepo(Repo):
