@@ -7,7 +7,7 @@ from db.models import BpmnProcess
 from db.repos import RepoManager, get_repo_manager
 from schemas import BpmnProcessSchema
 
-router = APIRouter(prefix='/bpmn_processes')
+router = APIRouter(prefix='/bpmn_processes', tags=['BpmnProcess'])
 
 
 @router.get('', response_model=List[BpmnProcessSchema])

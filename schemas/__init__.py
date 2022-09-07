@@ -10,7 +10,7 @@ class BpmnProcessSchema(BaseModel):
 
 
 class BpmnProcessInstanceSchema(BaseModel):
-    bpmn_process: BpmnProcessSchema
+    bpmn_process_id: int
     current_task: str
 
     class Config:

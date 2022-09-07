@@ -33,7 +33,7 @@ class Repo:
         await self.session.execute(update(self.Model).where(self.Model.id == id).values(**params))
         return await self.get(id)
 
-    async def delete(self, id: int):
+    async def delete(self, id: int) -> int:
         return (await self.session.execute(delete(self.Model).where(self.Model.id == id))).rowcount
 
 
