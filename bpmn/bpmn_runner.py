@@ -1,16 +1,13 @@
 from tempfile import NamedTemporaryFile
 from typing import Tuple, Optional
 
-from fastapi import Depends
 from SpiffWorkflow.bpmn.workflow import BpmnWorkflow
 from SpiffWorkflow.camunda.parser.CamundaParser import CamundaParser
 from SpiffWorkflow.camunda.specs.UserTask import UserTask
 from SpiffWorkflow.bpmn.serializer.BpmnSerializer import BpmnSerializer
-from SpiffWorkflow.task import Task
 from loguru import logger
 
 from db.models import BpmnProcess, BpmnProcessInstance
-from db.repos import RepoManager, get_repo_manager
 
 
 class StopWorkflow(Exception):
@@ -18,43 +15,43 @@ class StopWorkflow(Exception):
 
 
 class BpmnRunner(object):
-    """Manager for the creation and execution of a bpmn process"""
+    """Manager for the creation and execution of a bpmn workflow"""
 
     def __init__(self, repo_manager):
         self.serializer = BpmnSerializer()
         self.repo_manager = repo_manager
 
     async def create_process_instance(self, process: BpmnProcess, data: Optional[dict] = None) -> BpmnProcessInstance:
+        """Create a new process instance"""
+
         parser = CamundaParser()
         with NamedTemporaryFile(mode='w+t') as f:
             f.write(process.xml_definition)
             f.seek(0)
             parser.add_bpmn_file(f.name)
-        # parser.add_bpmn_xml(etree.fromstring(
-        #     bytes(process.xml_definition, 'utf-8')))
         wf_spec = parser.get_spec(process.name)
         workflow = BpmnWorkflow(wf_spec)
-        (state, current_task) = self._run_to_next_state(workflow, data)
+        state, next_task = self._run_to_next_state(workflow, data)
         repo = self.repo_manager.get_repo(BpmnProcessInstance)
-        return await repo.create({'bpmn_process_id': process.id, 'state': state, 'current_task': current_task})
+        return await repo.create({'bpmn_process_id': process.id, 'state': state, 'current_task': next_task})
 
-    async def run_to_next_state(self, process_instance: BpmnProcessInstance, data: Optional[dict] = None) -> BpmnProcessInstance:
-        workflow = self.serializer.deserialize_workflow(
-            process_instance.state, workflow_spec=None)
-        if workflow.is_completed() is True:
+    async def run(self, process_instance: BpmnProcessInstance, data: Optional[dict] = None) -> BpmnProcessInstance:
+        """Run workflow to the next ready state"""
+
+        workflow = self.serializer.deserialize_workflow(process_instance.state)
+        if workflow.is_completed():
             return process_instance
-        (state, current_task) = self._run_to_next_state(workflow, data)
+        state, next_task = self._run_to_next_state(workflow, data)
         repo = self.repo_manager.get_repo(BpmnProcessInstance)
-        return await repo.update(process_instance.id, {'state': state, 'current_task': current_task})
+        return await repo.update(process_instance.id, {'state': state, 'current_task': next_task})
 
     def _run_to_next_state(self, workflow: BpmnWorkflow, data: Optional[dict] = None) -> Tuple[str, str]:
-        """Run workflow to the next ready state or to completion"""
         if data is None:
             data = {}
         workflow.do_engine_steps()
         ready_tasks = workflow.get_ready_user_tasks()
         try:
-            # while there's a ready user task, try to complete it
+            # while there's a ready user task, attempt to complete it
             while len(ready_tasks) > 0:
                 for task in ready_tasks:
                     if isinstance(task.task_spec, UserTask):
@@ -69,7 +66,7 @@ class BpmnRunner(object):
                         workflow.complete_task_from_id(task.id)
                         logger.info(
                             f'Completed Task: ({task.get_name()}) {task.get_description()}')
-                    # run untill the next user task
+                    # run intermediate engine tasks
                     workflow.do_engine_steps()
                     # update remaining user tasks
                     ready_tasks = workflow.get_ready_user_tasks()
@@ -78,17 +75,12 @@ class BpmnRunner(object):
         # serialize the current state of the workflow
         state = self.serializer.serialize_workflow(workflow, include_spec=True)
         next_task = self._get_next_task(workflow)
-        return (state, next_task.get_description() or '')
+        task_name = next_task.get_description() if next_task else 'END'
+        return state, task_name
 
     def _get_next_task(self, workflow: BpmnWorkflow):
-        """
-        Get the next ready user task,
-        If workflow is completed, return the last completed task
-        """
-        if workflow.is_completed() is True:
-            return workflow.get_tasks(Task.FINISHED_MASK).pop()
-        return list(reversed(workflow.get_ready_user_tasks())).pop()
+        """Get the next ready task"""
 
-
-def get_bpmn_runner(repo_manager: RepoManager = Depends(get_repo_manager)) -> BpmnRunner:
-    return BpmnRunner(repo_manager)
+        if workflow.is_completed():
+            return None
+        return workflow.get_ready_user_tasks()[0]
