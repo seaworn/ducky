@@ -1,13 +1,13 @@
 import asyncio
 
-from db import engine
-from db.models import Base
+from db.database import Database
+
+db = Database()
 
 
-async def drop_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+async def main():
+    await db.drop_tables()
 
 
 if __name__ == "__main__":
-    asyncio.run(drop_tables())
+    asyncio.run(main())

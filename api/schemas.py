@@ -2,16 +2,19 @@ from pydantic import BaseModel
 
 
 class BpmnProcessSchema(BaseModel):
+    id: int
     name: str
     xml_definition: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class BpmnProcessInstanceSchema(BaseModel):
+    id: int
     bpmn_process_id: int
-    current_task: str
+    serialization: str  # dict
+    task_id: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
