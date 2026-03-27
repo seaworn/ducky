@@ -243,6 +243,8 @@ class CamundaFormValidator:
             # if name in field.has_validation(name):
             if name in (v.name for v in field.validation):
                 config = field.get_validation(name)
+                if config is None:
+                    config = ""
                 validator = getattr(self, f"_validate_{name}", None)
                 try:
                     if not validator:
@@ -260,7 +262,7 @@ class CamundaFormValidator:
 
     def _validate_required(self, config: str, value: Any):
         # any of these is considered false so value is not required i.e. field is optional
-        if config in ("0", "false", "False", "FALSE"):
+        if config in ("", "0", "false", "False", "FALSE"):
             return
         if bool(config) is not bool(value):
             return "Value is required"
