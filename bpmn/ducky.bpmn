@@ -12,7 +12,7 @@
             <camunda:validation>
               <camunda:constraint name="required" />
               <camunda:constraint name="unknown" />
-              <camunda:constraint name="pattern" config="\d+" />
+              <camunda:constraint name="pattern" config="\w+" />
             </camunda:validation>
             <camunda:value id="Mallard" name="Mallard" />
             <camunda:value id="Wood_Duck" name="Wood Duck" />
@@ -20,11 +20,9 @@
             <camunda:value id="Dead" name="Dead Ducks" />
           </camunda:formField>
           <camunda:formField id="tolerant" label="Do you mind finding random feathers and eggs in your house? " type="boolean">
-            <camunda:properties>
-              <camunda:property id="prop_1" value="value_1" />
-            </camunda:properties>
+            <camunda:properties />
             <camunda:validation>
-              <camunda:constraint name="required" config="1" />
+              <camunda:constraint name="required" />
             </camunda:validation>
           </camunda:formField>
         </camunda:formData>

@@ -51,6 +51,7 @@ class BpmnProcessInstance(Base):
     )
     serialization: Mapped[dict] = mapped_column(JSON, nullable=False)
     task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    completed: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     def __str__(self):
         return f"<{self.__name__} id={self.id} bpmn_process={self.bpmn_process.name}, task_id={self.task_id}>"

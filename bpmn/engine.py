@@ -144,7 +144,7 @@ class Workflow:
             data: a dictionary containing data for tasks, keys correspond to the task name
         """
 
-        if self.bpmn_workflow.is_completed():
+        if self.is_completed():
             return
         if data is None:
             data = {}
@@ -172,6 +172,9 @@ class Workflow:
             task.run()
             start_task = task  # start at the just completed task
             self.run_engine_tasks(data, start_task)
+
+    def is_completed(self) -> bool:
+        return self.bpmn_workflow.is_completed()
 
     def run_engine_tasks(self, data: dict, start_task: Task | None = None) -> None:
         # get non-user tasks (manual=False)

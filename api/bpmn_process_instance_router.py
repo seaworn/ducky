@@ -43,5 +43,11 @@ async def run(
     )
     serialization = engine.serialize_workflow(wf)
     task_id = wf.get_next_task_id()
-    await repo.update(process_instance, serialization=serialization, task_id=task_id)
+    completed = wf.is_completed()
+    await repo.update(
+        process_instance,
+        serialization=serialization,
+        task_id=task_id,
+        completed=completed,
+    )
     return process_instance

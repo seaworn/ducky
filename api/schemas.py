@@ -15,6 +15,7 @@ class BpmnProcessInstanceSchema(BaseModel):
     bpmn_process_id: int
     serialization: str  # dict
     task_id: str
+    completed: bool
 
     class Config:
         from_attributes = True
