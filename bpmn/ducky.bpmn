@@ -26,6 +26,7 @@
             </camunda:validation>
           </camunda:formField>
         </camunda:formData>
+        <camunda:taskListener class="" event="create" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_198qs8m</bpmn:incoming>
       <bpmn:outgoing>Flow_167co58</bpmn:outgoing>

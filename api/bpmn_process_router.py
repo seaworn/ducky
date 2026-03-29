@@ -78,7 +78,8 @@ async def create_instance(
     process = await process_repo.get(id)
     if process is None:
         raise HTTPException(404, f"Process not found: {id=}")
-    wf = engine.start_workflow(process.xml_definition, process.name, data)
+    engine.add_bpmn(process.xml_definition)
+    wf = engine.start_workflow(process.name, data)
     serialization = engine.serialize_workflow(wf)
     task_id = wf.get_next_task_id()
     completed = wf.is_completed()

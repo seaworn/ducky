@@ -44,38 +44,33 @@ class BpmnEngine:
         self.parser = parser
         self.serializer = serializer
 
-    def load_from_file(self, bpmn_file: pathlib.Path | str) -> None:
+    def load_from_file(self, bpmn_file: str | pathlib.Path) -> None:
         self.parser.add_bpmn_file(bpmn_file)
 
     def load_from_string(self, bpmn_xml: str) -> None:
         self.parser.add_bpmn_str(bpmn_xml.encode())
 
-    def start_workflow(
-        self,
-        bpmn: str,
-        process_id: str,
-        data: dict | None = None,
-        *,
-        load_from_file: bool = False,
-    ) -> Workflow:
+    def add_bpmn(self, bpmn: str | pathlib.Path, is_file: bool = False) -> None:
         """
-        1. Load given bpmn definition
-        2. Create a new workflow for given process_id
-        3. Start the workflow
+        Add a bpmn definition to the engine.
 
         Attributes:
-            bpmn: The bpmn definition as an xml string or file path
+            bpmn: The bpmn definition
+            is_file: Whether `bpmn` is an xml string or file path
+        """
+        if isinstance(bpmn, str) and not is_file:
+            return self.load_from_string(bpmn)
+        return self.load_from_file(bpmn)
+
+    def start_workflow(self, process_id: str, data: dict | None = None) -> Workflow:
+        """
+        Create a new workflow for given process_id and start running it
+
+        Attributes:
             process_id: The id of the process to start
             data: Optional task data to pass to the workflow
-            load_from_file: Whether `bpmn` is a file path or an xml string
         """
-        if load_from_file:
-            path = pathlib.Path(bpmn)
-            assert path.exists(), f"File not found at this path: {path}"
-            self.load_from_file(bpmn)
-        else:
-            self.load_from_string(bpmn)
-        spec = self.parser.get_spec(process_id, True)
+        spec = self.parser.get_spec(process_id, required=True)
         wf_bpmn = BpmnWorkflow(spec)
         wf = Workflow(wf_bpmn)
         self._run_workflow(wf, data)
