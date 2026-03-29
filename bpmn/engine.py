@@ -45,12 +45,6 @@ class BpmnEngine:
         self.parser = parser
         self.serializer = serializer
 
-    def load_from_file(self, bpmn_file: str | pathlib.Path) -> None:
-        self.parser.add_bpmn_file(bpmn_file)
-
-    def load_from_string(self, bpmn_xml: str) -> None:
-        self.parser.add_bpmn_str(bpmn_xml.encode())
-
     def add_bpmn(self, bpmn: str | pathlib.Path, is_file: bool = False) -> None:
         """
         Add a bpmn definition to the engine.
@@ -60,8 +54,9 @@ class BpmnEngine:
             is_file: Whether `bpmn` is an xml string or file path
         """
         if isinstance(bpmn, str) and not is_file:
-            return self.load_from_string(bpmn)
-        return self.load_from_file(bpmn)
+            self.parser.add_bpmn_str(bpmn.encode())
+        else:
+            self.parser.add_bpmn_file(bpmn)
 
     def start_workflow(self, process_id: str, data: dict | None = None) -> Workflow:
         """
