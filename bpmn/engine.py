@@ -3,7 +3,7 @@ import re
 from typing import Any, Self, TypedDict
 
 from loguru import logger
-from SpiffWorkflow.bpmn.parser import BpmnParser
+from SpiffWorkflow.bpmn.parser import BpmnParser, BpmnValidator
 from SpiffWorkflow.bpmn.serializer import BpmnWorkflowSerializer
 from SpiffWorkflow.bpmn.workflow import BpmnWorkflow, Task
 from SpiffWorkflow.camunda.parser.CamundaParser import CamundaParser
@@ -25,8 +25,8 @@ def create_bpmn_engine() -> BpmnEngine:
     Helper function to create a BpmnEngine
     DI -> Keep creation of the parser and serializer outside `BpmnEngine.__init__()`
     """
-
-    parser = CamundaParser()
+    validator = BpmnValidator()
+    parser = CamundaParser(validator=validator)
     serializer = CamundaSerializer()
     engine = BpmnEngine(parser, serializer)
     return engine
