@@ -58,6 +58,12 @@ class BpmnEngine:
         else:
             self.parser.add_bpmn_file(bpmn)
 
+    def get_process_ids(self):
+        """
+        Get list of process IDs
+        """
+        return self.parser.get_process_ids()
+
     def start_workflow(self, process_id: str, data: dict | None = None) -> Workflow:
         """
         Create a new workflow for given process_id and start running it

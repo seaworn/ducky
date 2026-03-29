@@ -5,6 +5,8 @@ if __name__ == "__main__":
     with open("bpmn/ducky.bpmn", "r") as f:
         bpmn_xml = f.read()
     engine.add_bpmn(bpmn_xml)
+    process_ids = engine.get_process_ids()
+    print("Process IDs:", process_ids)
     # data = None
     data = {"Activity_07fx4xs": {"variety": "DeadDuck", "tolerant": True}}
     wf = engine.start_workflow("ducky", data)
