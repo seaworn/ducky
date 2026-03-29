@@ -8,7 +8,8 @@ from SpiffWorkflow.bpmn.serializer import BpmnWorkflowSerializer
 from SpiffWorkflow.bpmn.workflow import BpmnWorkflow, Task
 from SpiffWorkflow.camunda.parser.CamundaParser import CamundaParser
 from SpiffWorkflow.camunda.serializer.config import CAMUNDA_CONFIG
-from SpiffWorkflow.camunda.specs.user_task import Form, FormField
+from SpiffWorkflow.camunda.specs.user_task import Form as CamundaForm
+from SpiffWorkflow.camunda.specs.user_task import FormField as CamundaFormField
 from SpiffWorkflow.camunda.specs.user_task import UserTask as CamundaUserTask
 from SpiffWorkflow.util.task import TaskState
 
@@ -221,7 +222,7 @@ class CamundaFormValidator:
     Validates user task data against a Camunda form definition.
     """
 
-    def __init__(self, form: Form):
+    def __init__(self, form: CamundaForm):
         self.form = form
 
     def validate(self, data: dict[str, Any]) -> list[FieldError]:
@@ -233,29 +234,26 @@ class CamundaFormValidator:
                 errors.append(dict(id=field.id, label=field.label, errors=field_errors))
         return errors
 
-    def validate_field(self, field: FormField, value: Any) -> list[str]:
+    def validate_field(self, field: CamundaFormField, value: Any) -> list[str]:
         errors = []
-        constraints = {v.name for f in self.form.fields for v in f.validation}
+        constraints = {v.name for v in field.validation}
         for name in constraints:
-            # field.has_validation() doesn't work for constraints with blank config e.g required. Possibly a bug in SpiffWorkflow.
-            # if name in field.has_validation(name):
-            if name in (v.name for v in field.validation):
-                config = field.get_validation(name)
-                if config is None:
-                    config = ""
-                validator = getattr(self, f"_validate_{name}", None)
-                try:
-                    if not validator:
-                        raise SkipValidation(
-                            f"Validator for constraint `{name}` not defined"
-                        )
-                    error = validator(config, value)
-                    if error:
-                        errors.append(error)
-                        if name == "required":
-                            return errors  # early exit if required constraint fails
-                except SkipValidation as e:
-                    self._warn_skip_validation(field.id, name, config, str(e))
+            config = field.get_validation(name)
+            if config is None:
+                config = ""
+            validator = getattr(self, f"_validate_{name}", None)
+            try:
+                if not validator:
+                    raise SkipValidation(
+                        f"Validator for constraint `{name}` not defined"
+                    )
+                error = validator(config, value)
+                if error:
+                    errors.append(error)
+                    if name == "required":
+                        return errors  # early exit if required constraint fails
+            except SkipValidation as e:
+                self._warn_skip_validation(field.id, name, config, str(e))
         return errors
 
     def _validate_required(self, config: str, value: Any):
@@ -313,7 +311,7 @@ class CamundaFormValidator:
             return f"Value does not match pattern {config}"
 
     def _warn_skip_validation(
-        self, field: str, constraint: str, config: str | None, reason: str | None = None
+        self, field: str, constraint: str, config: str, reason: str | None = None
     ) -> None:
         logger.warning(
             f"Field validation constraint `{constraint}` with config `{config}` skipped on field `{field}`{': ' + reason if reason else ''}"
