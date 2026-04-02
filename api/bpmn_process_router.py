@@ -81,7 +81,7 @@ async def create_instance(
     engine.add_bpmn(process.xml_definition)
     wf = engine.start_workflow(process.name, data)
     serialization = engine.serialize_workflow(wf)
-    task_id = wf.get_next_task_id()
+    task_id = wf.get_next_waiting_task_id()
     completed = wf.is_completed()
     process_instance = BpmnProcessInstance(
         bpmn_process_id=process.id,

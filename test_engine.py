@@ -11,8 +11,8 @@ if __name__ == "__main__":
     data = {"Activity_07fx4xs": {"variety": "DeadDuck", "tolerant": True}}
     wf = engine.start_workflow("ducky", data)
     serialization = engine.serialize_workflow(wf)
-    task_id = wf.get_next_task_id()
-    completed = wf.is_completed()
     print("Serialization:", serialization)
+    task_id = wf.get_next_waiting_task_id()
     print("Next task:", task_id)
+    completed = wf.is_completed()
     print("Completed:", completed)

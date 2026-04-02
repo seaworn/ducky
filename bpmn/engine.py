@@ -205,7 +205,7 @@ class Workflow:
             f"Completed task `{task.task_spec.name}` with status `{TaskState.get_name(task.state)}`"
         )
 
-    def get_next_task_id(self) -> str | None:
+    def get_next_waiting_task_id(self) -> str | None:
         task = self.bpmn_workflow.get_next_task(state=TaskState.NOT_FINISHED_MASK)
         return task.task_spec.name if task else None
 
