@@ -9,7 +9,22 @@ from sqlalchemy.orm import DeclarativeBase
 # ---
 
 
-class Repository[_ModelType: DeclarativeBase]:
+class RepositoryMeta(type):
+    @property
+    def model(self) -> type[DeclarativeBase]:
+        try:
+            return self._model
+        except AttributeError:
+            raise AttributeError(
+                "A Repository subclass must define the 'model' attribute"
+            )
+
+    @model.setter
+    def model(self, value: type[DeclarativeBase]) -> None:
+        self._model = value
+
+
+class Repository[_ModelType: DeclarativeBase](metaclass=RepositoryMeta):
     """
     A repository holds a reference to an SQLAlchemy session and the model class it manages.
     Subclass this to add domain-specific query methods.
