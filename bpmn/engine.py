@@ -2,7 +2,7 @@ import asyncio
 import re
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TypedDict, override
+from typing import Any, TypedDict, cast, override
 
 from loguru import logger
 from SpiffWorkflow.bpmn.parser import BpmnValidator
@@ -59,20 +59,20 @@ class BpmnEngine:
         bpmn_files: Sequence[Path | str],
         dmn_files: Sequence[Path | str] | None = None,
     ) -> SID:
-        def _get_filename(f):
+        def get_filename(f):
             if isinstance(f, str):
                 f = Path(f)
             return str(f.resolve())
 
-        self.parser.add_bpmn_files(_get_filename(f) for f in bpmn_files)
+        self.parser.add_bpmn_files(get_filename(f) for f in bpmn_files)
         if dmn_files:
-            self.parser.add_dmn_files(_get_filename(f) for f in dmn_files)
-        spec: BpmnProcessSpec = self.parser.get_spec(name)  # pyright: ignore [reportAssignmentType]
-        s_spec: dict = self.serializer.to_dict(spec)  # pyright: ignore [reportAssignmentType]
-        sub_specs: dict[str, BpmnProcessSpec] = self.parser.get_subprocess_specs(name)
+            self.parser.add_dmn_files(get_filename(f) for f in dmn_files)
+        spec = cast(BpmnProcessSpec, self.parser.get_spec(name))
+        s_spec = cast(dict, self.serializer.to_dict(spec))
+        sub_specs = self.parser.get_subprocess_specs(name)
         s_sub_specs = {}
         for n, sub_spec in sub_specs.items():
-            s_sub_specs[n] = self.serializer.to_dict(sub_spec)
+            s_sub_specs[n] = cast(dict, self.serializer.to_dict(sub_spec))
         sid = await self.store.save_workflow_spec(s_spec, s_sub_specs)
         return sid
 
@@ -92,15 +92,15 @@ class BpmnEngine:
             raise WorkflowRuntimeError(
                 f"Workflow spec with name or id `{spec_id}` not found"
             )
-        spec: BpmnProcessSpec = self.serializer.from_dict(s_spec[0])  # pyright: ignore [reportAssignmentType]
-        sub_specs: dict[str, BpmnProcessSpec] = {
-            n: self.serializer.from_dict(s) for n, s in s_spec[1].items()
-        }  # pyright: ignore [reportAssignmentType]
-        wf_bpmn = BpmnWorkflow(spec, subprocess_specs=sub_specs)
-        self._update_workflow_data(wf_bpmn, data)
+        spec = cast(BpmnProcessSpec, self.serializer.from_dict(s_spec[0]))
+        sub_specs = {}
+        for n, s_sub_spec in s_spec[1].items():
+            sub_specs[n] = cast(BpmnProcessSpec, self.serializer.from_dict(s_sub_spec))
+        wf = BpmnWorkflow(spec, subprocess_specs=sub_specs)
+        self._update_workflow_data(wf, data)
         if start:
-            self._run_workflow(wf_bpmn)
-        s_state: dict = self.serializer.to_dict(wf_bpmn)  # pyright: ignore [reportAssignmentType]
+            self._run_workflow(wf)
+        s_state = cast(dict, self.serializer.to_dict(wf))
         sid = await self.store.save_workflow(s_state)
         return sid
 
@@ -117,10 +117,10 @@ class BpmnEngine:
         s_state = await self.store.get_workflow(workflow_id)
         if s_state is None:
             raise WorkflowRuntimeError(f"Workflow with id `{workflow_id}` not found")
-        wf_bpmn: BpmnWorkflow = self.serializer.from_dict(s_state)  # pyright: ignore [reportAssignmentType]
-        self._update_workflow_data(wf_bpmn, data)
-        self._run_workflow(wf_bpmn)
-        s_state_new: dict = self.serializer.to_dict(wf_bpmn)  # pyright: ignore [reportAssignmentType]
+        wf = cast(BpmnWorkflow, self.serializer.from_dict(s_state))
+        self._update_workflow_data(wf, data)
+        self._run_workflow(wf)
+        s_state_new = cast(dict, self.serializer.to_dict(wf))
         await self.store.save_workflow(s_state_new, workflow_id)
 
     def _update_workflow_data(self, wf: BpmnWorkflow, data: dict | None = None) -> None:
@@ -216,6 +216,19 @@ class BpmnEngine:
             logger.warning(str(e))
         except Exception as e:
             logger.exception(str(e))
+
+
+class BpmnEngineEvent(Event):
+    """
+    Base class for bpmn engine events.
+    """
+
+    def __init__(self, event_data: dict[str, Any]):
+        super().__init__()
+        self.data = event_data
+
+    def __str__(self) -> str:
+        return f"<{fqn(self)} data={self.data}>"
 
 
 class CamundaSerializer(BpmnWorkflowSerializer):
@@ -341,19 +354,6 @@ class FieldError(TypedDict):
     id: str
     label: str | None
     errors: list[str]
-
-
-class BpmnEngineEvent(Event):
-    """
-    Base class for bpmn engine events.
-    """
-
-    def __init__(self, event_data: dict[str, Any]):
-        super().__init__()
-        self.data = event_data
-
-    def __str__(self) -> str:
-        return f"<{fqn(self)} data={self.data}>"
 
 
 class SkipValidation(Exception):
