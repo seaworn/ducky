@@ -18,13 +18,11 @@ class AsyncStore(ABC):
     """
 
     @abstractmethod
-    async def get_workflow_spec(
-        self, sid: SID | str
-    ) -> tuple[dict, dict[str, dict]] | None:
+    async def get_workflow_spec(self, sid: SID | str) -> tuple[dict, dict] | None:
         raise NotImplementedError()
 
     @abstractmethod
-    async def save_workflow_spec(self, spec: dict, sub_specs: dict[str, dict]) -> SID:
+    async def save_workflow_spec(self, spec: dict, sub_specs: dict) -> SID:
         raise NotImplementedError()
 
     @abstractmethod
@@ -44,9 +42,7 @@ class SqlAlchemyDatabaseStore(AsyncStore):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_workflow_spec(
-        self, sid: SID | str
-    ) -> tuple[dict, dict[str, dict]] | None:
+    async def get_workflow_spec(self, sid: SID | str) -> tuple[dict, dict] | None:
         stmt = select(models.BpmnWorkflowSpec).where(
             (models.BpmnWorkflowSpec.id == sid) | (models.BpmnWorkflowSpec.name == sid)
         )
@@ -57,7 +53,7 @@ class SqlAlchemyDatabaseStore(AsyncStore):
             subworkflow_specs = {s.name: s.spec for s in subworkflow_specs}
             return (workflow_spec.spec, subworkflow_specs)
 
-    async def save_workflow_spec(self, spec: dict, sub_specs: dict[str, dict]) -> SID:
+    async def save_workflow_spec(self, spec: dict, sub_specs: dict) -> SID:
         async def _create_or_update(spec):
             stmt = select(models.BpmnWorkflowSpec).where(
                 models.BpmnWorkflowSpec.name == spec["name"]
@@ -153,29 +149,35 @@ class SqlAlchemyDatabaseStore(AsyncStore):
             version=s_state["serializer_version"],
         )
         self.session.add(workflow)
-        task_specs = await workflow_spec.awaitable_attrs.task_specs
-        for t_id, t_state in s_state["tasks"].items():
-            task_spec = next(
-                task_spec
-                for task_spec in task_specs
-                if task_spec.name == t_state["task_spec"]
-            )
-            uid = UUID(t_id)
-            lsc = datetime.fromtimestamp(t_state["last_state_change"])
-            task = models.BpmnTask(
-                workflow=workflow,
-                typename=t_state["typename"],
-                uid=uid,
-                state=t_state["state"],
-                last_state_change=lsc,
-                task_spec=task_spec,
-            )
-            self.session.add(task)
-            for key, value in t_state["data"].items():
-                task_data = models.BpmnTaskData(key=key, value=value, task=task)
-                self.session.add(task_data)
+        for task in s_state["tasks"].values():
+            await self._create_task(workflow, task)
         await self.session.flush()
         return workflow
+
+    async def _create_task(
+        self, workflow: models.BpmnWorkflow, s_state: dict
+    ) -> models.BpmnTask:
+        stmt = select(models.BpmnTaskSpec).where(
+            models.BpmnTaskSpec.name == s_state["task_spec"],
+            models.BpmnTaskSpec.workflow_spec_id == workflow.workflow_spec_id,
+        )
+        res = await self.session.scalars(stmt)
+        task_spec = res.one()
+        uid = UUID(s_state["id"])
+        lsc = datetime.fromtimestamp(s_state["last_state_change"])
+        task = models.BpmnTask(
+            typename=s_state["typename"],
+            state=s_state["state"],
+            uid=uid,
+            workflow=workflow,
+            task_spec=task_spec,
+            last_state_change=lsc,
+        )
+        self.session.add(task)
+        for key, value in s_state["data"].items():
+            task_data = models.BpmnTaskData(key=key, value=value, task=task)
+            self.session.add(task_data)
+        return task
 
     async def _update_workflow(
         self, workflow: models.BpmnWorkflow, s_state: dict
@@ -186,8 +188,13 @@ class SqlAlchemyDatabaseStore(AsyncStore):
         for t_id, t_state in s_state["tasks"].items():
             stmt = select(models.BpmnTask).where(models.BpmnTask.uid == UUID(t_id))
             res = await self.session.scalars(stmt)
-            task = res.one()
+            task = res.one_or_none()
+            if not task:
+                await self._create_task(workflow, t_state)
+                continue
             task.state = t_state["state"]
+            lsc = datetime.fromtimestamp(t_state["last_state_change"])
+            task.last_state_change = lsc
             for key, value in t_state["data"].items():
                 stmt = select(models.BpmnTaskData).where(
                     models.BpmnTaskData.task_id == task.id,
