@@ -6,6 +6,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from util import fqn
+
 
 class _PKMixin:
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -61,7 +63,7 @@ class BpmnWorkflowSpec(Base):
     )
 
     def __str__(self):
-        return f"<{self.__name__} id={self.id} name={self.name}>"
+        return f"<{fqn(self)} id={self.id} name={self.name}>"
 
 
 class BpmnWorkflow(Base):
@@ -86,7 +88,7 @@ class BpmnWorkflow(Base):
     tasks: Mapped[list[BpmnTask]] = relationship("BpmnTask", back_populates="workflow")
 
     def __str__(self):
-        return f"<{self.__name__} id={self.id} name={self.workflow_spec.name}>"
+        return f"<{fqn(self)} id={self.id} name={self.workflow_spec.name}>"
 
 
 class BpmnTaskSpec(Base):
@@ -112,7 +114,7 @@ class BpmnTaskSpec(Base):
     tasks: Mapped[list[BpmnTask]] = relationship("BpmnTask", back_populates="task_spec")
 
     def __str__(self):
-        return f"<{self.__name__} id={self.id} workflow_spec={self.workflow_spec.name} name={self.name}>"
+        return f"<{fqn(self)} id={self.id} workflow_spec={self.workflow_spec.name} name={self.name}>"
 
 
 class BpmnTask(Base):
@@ -145,7 +147,7 @@ class BpmnTask(Base):
     )
 
     def __str__(self):
-        return f"<{self.__name__} id={self.id} task_spec={self.task_spec.name}>"
+        return f"<{fqn(self)} id={self.id} task_spec={self.task_spec.name}>"
 
 
 class BpmnTaskData(Base):
@@ -163,4 +165,4 @@ class BpmnTaskData(Base):
     task: Mapped[BpmnTask] = relationship("BpmnTask", back_populates="task_data")
 
     def __str__(self):
-        return f"<{self.__name__} id={self.id} task_id={self.task_id} task_spec={self.task.task_spec.name}>"
+        return f"<{fqn(self)} id={self.id} task_id={self.task_id} task_spec={self.task.task_spec.name}>"

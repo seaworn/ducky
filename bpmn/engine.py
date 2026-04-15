@@ -19,6 +19,7 @@ from SpiffWorkflow.util.task import TaskState
 from whistle import Event, IAsyncEventDispatcher
 
 from bpmn.store import SID, AsyncStore
+from util import fqn
 
 
 def create_bpmn_engine(
@@ -352,7 +353,7 @@ class BpmnEngineEvent(Event):
         self.data = event_data
 
     def __str__(self) -> str:
-        return f"<{self.__class__.__name__} data={self.data}>"
+        return f"<{fqn(self)} data={self.data}>"
 
 
 class SkipValidation(Exception):
