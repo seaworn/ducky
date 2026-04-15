@@ -12,4 +12,5 @@ dependencies = [
     "spiffworkflow>=3.1.2",
     "sqlalchemy>=2.0.46",
     "uvicorn>=0.41.0",
+    "whistle>=2.1.4",
 ]

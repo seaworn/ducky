@@ -1,3 +1,4 @@
+import asyncio
 import re
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,28 +16,14 @@ from SpiffWorkflow.camunda.specs.user_task import FormField as CamundaFormField
 from SpiffWorkflow.camunda.specs.user_task import UserTask as CamundaUserTask
 from SpiffWorkflow.dmn.parser import BpmnDmnParser
 from SpiffWorkflow.util.task import TaskState
+from whistle import Event, IAsyncEventDispatcher
 
 from bpmn.store import SID, AsyncStore
 
 
-class CamundaSerializer(BpmnWorkflowSerializer):
-    def __init__(self) -> None:
-        registry = BpmnWorkflowSerializer.configure(CAMUNDA_CONFIG)
-        super().__init__(registry)
-
-    @override
-    def to_dict(self, obj: Any, **kwargs) -> dict:
-        dct: dict = super().to_dict(obj, **kwargs)  # pyright: ignore [reportAssignmentType]
-        dct[self.VERSION_KEY] = self.VERSION
-        return dct
-
-    @override
-    def from_dict(self, dct: dict, **kwargs) -> Any:
-        self.migrate(dct)
-        return super().from_dict(dct, **kwargs)
-
-
-def create_bpmn_engine(store: AsyncStore) -> BpmnEngine:
+def create_bpmn_engine(
+    store: AsyncStore, event_dispatcher: IAsyncEventDispatcher
+) -> BpmnEngine:
     """
     Helper function to create a BpmnEngine
     DI -> Keep creation of the parser and serializer outside `BpmnEngine.__init__()`
@@ -44,7 +31,7 @@ def create_bpmn_engine(store: AsyncStore) -> BpmnEngine:
     validator = BpmnValidator()
     parser = CamundaParser(validator=validator)
     serializer = CamundaSerializer()
-    engine = BpmnEngine(parser, serializer, store)
+    engine = BpmnEngine(parser, serializer, store, event_dispatcher)
     return engine
 
 
@@ -58,10 +45,12 @@ class BpmnEngine:
         parser: BpmnDmnParser,
         serializer: BpmnWorkflowSerializer,
         store: AsyncStore,
+        event_dispatcher: IAsyncEventDispatcher,
     ):
         self.parser = parser
         self.serializer = serializer
         self.store = store
+        self.event_dispatcher = event_dispatcher
 
     async def add_workflow_spec(
         self,
@@ -107,14 +96,9 @@ class BpmnEngine:
             n: self.serializer.from_dict(s) for n, s in s_spec[1].items()
         }  # pyright: ignore [reportAssignmentType]
         wf_bpmn = BpmnWorkflow(spec, subprocess_specs=sub_specs)
-        if data:
-            for task in wf_bpmn.get_tasks():
-                task_data = data.get(task.task_spec.name)
-                if task_data:
-                    task.set_data(**task_data)
+        self._update_workflow_data(wf_bpmn, data)
         if start:
-            wf = Workflow(wf_bpmn)
-            wf.run()
+            self._run_workflow(wf_bpmn)
         s_state: dict = self.serializer.to_dict(wf_bpmn)  # pyright: ignore [reportAssignmentType]
         sid = await self.store.save_workflow(s_state)
         return sid
@@ -133,109 +117,121 @@ class BpmnEngine:
         if s_state is None:
             raise WorkflowRuntimeError(f"Workflow with id `{workflow_id}` not found")
         wf_bpmn: BpmnWorkflow = self.serializer.from_dict(s_state)  # pyright: ignore [reportAssignmentType]
-        wf = Workflow(wf_bpmn)
-        wf.run(data)
+        self._update_workflow_data(wf_bpmn, data)
+        self._run_workflow(wf_bpmn)
         s_state_new: dict = self.serializer.to_dict(wf_bpmn)  # pyright: ignore [reportAssignmentType]
         await self.store.save_workflow(s_state_new, workflow_id)
 
+    def _update_workflow_data(self, wf: BpmnWorkflow, data: dict | None = None) -> None:
+        if not data:
+            return
+        for task in wf.get_tasks():
+            task_data = data.get(task.task_spec.name)
+            if task_data:
+                task.set_data(**task_data)
 
-class Workflow:
-    """
-    Wraps a bpmn workflow.
-    """
-
-    def __init__(self, bpmn_workflow: BpmnWorkflow) -> None:
-        self.bpmn_workflow = bpmn_workflow
-
-    def run(self, data: dict | None = None, start_task_id: str | None = None) -> None:
+    def _run_workflow(self, wf: BpmnWorkflow, start_task_id: str | None = None) -> None:
         """
-        Run a workflow to the next state
+        Run a bpmn workflow.
         Calls `Task.run()` on all ready tasks until we enter a waiting state.
 
         Arguments:
-            data: a dictionary containing data for tasks, keys correspond to the task name
             start_task_id: the id of the task to start from, if None, starts from the beginning
         """
 
-        if self.is_completed():
+        if wf.is_completed():
             return
-        if data is None:
-            data = {}
-        start_task = (
-            self.bpmn_workflow.get_task_from_id(start_task_id)
-            if start_task_id
-            else None
-        )
-        self.run_engine_tasks(data, start_task)
+
+        async def before_refresh_task(task: Task) -> None:
+            logger.debug(f"Refreshing task `{task.task_spec.name}`")
+            await self.event_dispatcher.adispatch(
+                "bpmn_engine.before_refresh_task", BpmnEngineEvent({"task_id": task.id})
+            )
+
+        async def after_refresh_task(task: Task) -> None:
+            logger.debug(f"Refreshed task `{task.task_spec.name}`")
+            await self.event_dispatcher.adispatch(
+                "bpmn_engine.after_refresh_task", BpmnEngineEvent({"task_id": task.id})
+            )
+
+        async def before_complete_task(task: Task) -> None:
+            logger.debug(
+                f"Running task `{task.task_spec.name}` with data `{task.data}`"
+            )
+            await self.event_dispatcher.adispatch(
+                "bpmn_engine.before_complete_task",
+                BpmnEngineEvent({"task_id": task.id}),
+            )
+
+        async def after_complete_task(task: Task) -> None:
+            logger.debug(
+                f"Completed task `{task.task_spec.name}` with status `{TaskState.get_name(task.state)}`"
+            )
+            await self.event_dispatcher.adispatch(
+                "bpmn_engine.after_complete_task", BpmnEngineEvent({"task_id": task.id})
+            )
+
+        def run_engine_tasks() -> None:
+            def sync(cf):
+                def f(*args, **kwargs):
+                    asyncio.create_task(cf(*args, **kwargs))
+
+                return f
+
+            # refresh waiting task e.g. to update timer events
+            wf.refresh_waiting_tasks(
+                sync(before_refresh_task), sync(after_refresh_task)
+            )
+            # complete non-user tasks
+            wf.do_engine_steps(sync(before_complete_task), sync(after_complete_task))
+
+        def get_next_user_task(start_task: Task | None = None) -> Task | None:
+            return wf.get_next_task(
+                start_task, state=TaskState.NOT_FINISHED_MASK, manual=True
+            )
+
+        start_task = wf.get_task_from_id(start_task_id) if start_task_id else None
+        run_engine_tasks()
         try:
             # while there's a ready user task, attempt to complete it
-            while task := self.get_next_user_task(start_task):
+            while task := get_next_user_task(start_task):
                 logger.debug(
                     f"Attempting to complete user task `{task.task_spec.name}`"
                 )
-                # task data is taken from the data dict using the task spec name as key
-                task_data = data.get(task.task_spec.name)
                 if isinstance(task.task_spec, CamundaUserTask):
                     validator = CamundaFormValidator(task.task_spec.form)
-                    errors = validator.validate(task_data or {})
+                    errors = validator.validate(task.data or {})
                     if errors:
                         logger.debug(
                             f"Could not complete user task `{task.task_spec.name}` due to form validation errors: {errors}"
                         )
                         raise UserTaskFormValidationError(task.task_spec.name, errors)
-                if task_data:
-                    task.set_data(**task_data)
                 task.run()
-                start_task = task  # start at the just completed task
-                self.run_engine_tasks(data, start_task)
+                start_task = (
+                    task  # start from the just completed task in the next iteration
+                )
+                run_engine_tasks()
         except UserTaskFormValidationError as e:
             logger.warning(str(e))
         except Exception as e:
             logger.exception(str(e))
 
-    def is_completed(self) -> bool:
-        return self.bpmn_workflow.is_completed()
 
-    def run_engine_tasks(self, data: dict, start_task: Task | None = None) -> None:
-        # get non-user tasks (manual=False)
-        engine_tasks = self.bpmn_workflow.get_tasks(
-            start_task, state=TaskState.NOT_FINISHED_MASK, manual=False
-        )
-        # update task data
-        for task in engine_tasks:
-            if task_data := data.get(task.task_spec.name):
-                task.set_data(**task_data)
-        # refresh state of all waiting task e.g. to update timer events
-        self.bpmn_workflow.refresh_waiting_tasks(
-            self.before_refresh_task, self.after_refresh_task
-        )
-        # complete tasks
-        self.bpmn_workflow.do_engine_steps(
-            self.before_complete_task, self.after_complete_task
-        )
+class CamundaSerializer(BpmnWorkflowSerializer):
+    def __init__(self) -> None:
+        registry = BpmnWorkflowSerializer.configure(CAMUNDA_CONFIG)
+        super().__init__(registry)
 
-    def before_refresh_task(self, task: Task) -> None:
-        logger.debug(f"Refreshing task `{task.task_spec.name}`")
+    @override
+    def to_dict(self, obj: Any, **kwargs) -> dict:
+        dct: dict = super().to_dict(obj, **kwargs)  # pyright: ignore [reportAssignmentType]
+        dct[self.VERSION_KEY] = self.VERSION
+        return dct
 
-    def after_refresh_task(self, task: Task) -> None:
-        logger.debug(f"Refreshed task `{task.task_spec.name}`")
-
-    def before_complete_task(self, task: Task) -> None:
-        logger.debug(f"Running task `{task.task_spec.name}` with data `{task.data}`")
-
-    def after_complete_task(self, task: Task) -> None:
-        logger.debug(
-            f"Completed task `{task.task_spec.name}` with status `{TaskState.get_name(task.state)}`"
-        )
-
-    def get_next_waiting_task_id(self) -> str | None:
-        task = self.bpmn_workflow.get_next_task(state=TaskState.NOT_FINISHED_MASK)
-        return task.task_spec.name if task else None
-
-    def get_next_user_task(self, start_task: Task | None = None) -> Task | None:
-        return self.bpmn_workflow.get_next_task(
-            start_task, state=TaskState.NOT_FINISHED_MASK, manual=True
-        )
+    @override
+    def from_dict(self, dct: dict, **kwargs) -> Any:
+        self.migrate(dct)
+        return super().from_dict(dct, **kwargs)
 
 
 class CamundaFormValidator:
@@ -344,6 +340,19 @@ class FieldError(TypedDict):
     id: str
     label: str | None
     errors: list[str]
+
+
+class BpmnEngineEvent(Event):
+    """
+    Base class for bpmn engine events.
+    """
+
+    def __init__(self, event_data: dict[str, Any]):
+        super().__init__()
+        self.data = event_data
+
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__} data={self.data}>"
 
 
 class SkipValidation(Exception):

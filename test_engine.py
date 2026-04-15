@@ -3,6 +3,7 @@ import asyncio
 import json
 
 from loguru import logger
+from whistle import AsyncEventDispatcher
 
 from bpmn.engine import create_bpmn_engine
 from bpmn.store import SqlAlchemyDatabaseStore
@@ -11,6 +12,18 @@ from db.database import Database
 
 db = Database()
 
+event_dispatcher = AsyncEventDispatcher()
+
+
+async def _log_event(event):
+    logger.debug(f"Received event: {event}")
+
+
+event_dispatcher.add_listener("bpmn_engine.before_refresh_task", _log_event)
+event_dispatcher.add_listener("bpmn_engine.after_refresh_task", _log_event)
+event_dispatcher.add_listener("bpmn_engine.before_complete_task", _log_event)
+event_dispatcher.add_listener("bpmn_engine.after_complete_task", _log_event)
+
 
 async def _add(args):
     bpmn_files = [args.file]
@@ -18,7 +31,7 @@ async def _add(args):
         bpmn_files.extend(args.bpmn_files)
     async with db.session() as session, session.begin():
         store = SqlAlchemyDatabaseStore(session)
-        engine = create_bpmn_engine(store)
+        engine = create_bpmn_engine(store, event_dispatcher)
         sid = await engine.add_workflow_spec(args.name, bpmn_files, args.dmn_files)
         logger.info(f"Added workflow spec: name={args.name}, sid={sid}")
 
@@ -26,7 +39,7 @@ async def _add(args):
 async def _create(args):
     async with db.session() as session, session.begin():
         store = SqlAlchemyDatabaseStore(session)
-        engine = create_bpmn_engine(store)
+        engine = create_bpmn_engine(store, event_dispatcher)
         sid = await engine.create_workflow(args.name, data=args.data, start=args.start)
         logger.info(f"Created workflow instance: name={args.name}, sid={sid}")
 
@@ -34,7 +47,7 @@ async def _create(args):
 async def _run(args):
     async with db.session() as session, session.begin():
         store = SqlAlchemyDatabaseStore(session)
-        engine = create_bpmn_engine(store)
+        engine = create_bpmn_engine(store, event_dispatcher)
         await engine.continue_workflow(args.id, data=args.data)
         workflow = await session.get_one(models.BpmnWorkflow, args.id)
         logger.info(
