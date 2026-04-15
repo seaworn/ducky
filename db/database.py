@@ -11,7 +11,7 @@ AsyncSessionLocal = async_sessionmaker(engine, autoflush=True, expire_on_commit=
 
 class Database:
     """
-    Manages session lifecycle, and vends repository managers.
+    Database wrapper - manages session lifecycle.
     """
 
     async def create_tables(self) -> None:
