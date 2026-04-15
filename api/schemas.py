@@ -38,7 +38,7 @@ class BpmnWorkflow(BaseModel, _CommonMixin):
     completed: bool
     s_state: dict
     version: str | None
-    process_spec_id: int
+    workflow_spec_id: int
 
 
 class BpmnTaskSpec(BaseModel, _CommonMixin):
@@ -47,7 +47,7 @@ class BpmnTaskSpec(BaseModel, _CommonMixin):
     typename: str
     name: str
     description: str | None
-    process_spec_id: int
+    workflow_spec_id: int
     manual: bool
     subworkflow_spec: str | None
 
@@ -60,7 +60,7 @@ class BpmnTask(BaseModel, _CommonMixin):
     state: int
     last_state_change: datetime
     task_spec_id: int
-    process_id: int
+    workflow_id: int
 
 
 class BpmnTaskData(BaseModel, _CommonMixin):
