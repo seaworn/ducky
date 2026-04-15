@@ -33,7 +33,7 @@ class BpmnWorkflowSpec(Base):
     name: Mapped[str] = mapped_column(sa.String(60), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(sa.String(255), nullable=True)
     file: Mapped[str] = mapped_column(sa.String(255), nullable=True)
-    spec: Mapped[dict] = mapped_column(sa.JSON, nullable=False)
+    spec: Mapped[dict] = mapped_column(sa.JSON, nullable=False, deferred=True)
     version: Mapped[str] = mapped_column(sa.String(10), nullable=True)
 
     subworkflow_specs: Mapped[list[Self]] = relationship(
@@ -79,7 +79,7 @@ class BpmnWorkflow(Base):
     )
     last_task: Mapped[str] = mapped_column(sa.String(255), nullable=True, unique=True)
     completed: Mapped[bool] = mapped_column(nullable=False, default=False)
-    s_state: Mapped[dict] = mapped_column(sa.JSON, nullable=False)
+    s_state: Mapped[dict] = mapped_column(sa.JSON, nullable=False, deferred=True)
     version: Mapped[str] = mapped_column(sa.String(10), nullable=True)
 
     workflow_spec: Mapped[BpmnWorkflowSpec] = relationship(
@@ -106,7 +106,7 @@ class BpmnTaskSpec(Base):
     name: Mapped[str] = mapped_column(sa.String(60), nullable=False)
     description: Mapped[str] = mapped_column(sa.String(255), nullable=True)
     manual: Mapped[bool] = mapped_column(nullable=False, default=False)
-    subworkflow_spec: Mapped[str] = mapped_column(sa.String(60), nullable=True)
+    spec: Mapped[str] = mapped_column(sa.String(60), nullable=True)
 
     workflow_spec: Mapped[BpmnWorkflowSpec] = relationship(
         "BpmnWorkflowSpec", back_populates="task_specs"

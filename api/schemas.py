@@ -49,7 +49,7 @@ class BpmnTaskSpec(BaseModel, _CommonMixin):
     description: str | None
     workflow_spec_id: int
     manual: bool
-    subworkflow_spec: str | None
+    spec: str | None
 
 
 class BpmnTask(BaseModel, _CommonMixin):
