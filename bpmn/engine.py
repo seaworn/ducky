@@ -1,17 +1,22 @@
-import pathlib
 import re
-from typing import Any, Self, TypedDict
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any, TypedDict, override
 
 from loguru import logger
-from SpiffWorkflow.bpmn.parser import BpmnParser, BpmnValidator
+from SpiffWorkflow.bpmn.parser import BpmnValidator
 from SpiffWorkflow.bpmn.serializer import BpmnWorkflowSerializer
+from SpiffWorkflow.bpmn.specs import BpmnProcessSpec
 from SpiffWorkflow.bpmn.workflow import BpmnWorkflow, Task
 from SpiffWorkflow.camunda.parser.CamundaParser import CamundaParser
 from SpiffWorkflow.camunda.serializer.config import CAMUNDA_CONFIG
 from SpiffWorkflow.camunda.specs.user_task import Form as CamundaForm
 from SpiffWorkflow.camunda.specs.user_task import FormField as CamundaFormField
 from SpiffWorkflow.camunda.specs.user_task import UserTask as CamundaUserTask
+from SpiffWorkflow.dmn.parser import BpmnDmnParser
 from SpiffWorkflow.util.task import TaskState
+
+from bpmn.store import SID, AsyncStore
 
 
 class CamundaSerializer(BpmnWorkflowSerializer):
@@ -19,8 +24,19 @@ class CamundaSerializer(BpmnWorkflowSerializer):
         registry = BpmnWorkflowSerializer.configure(CAMUNDA_CONFIG)
         super().__init__(registry)
 
+    @override
+    def to_dict(self, obj: Any, **kwargs) -> dict:
+        dct: dict = super().to_dict(obj, **kwargs)  # pyright: ignore [reportAssignmentType]
+        dct[self.VERSION_KEY] = self.VERSION
+        return dct
 
-def create_bpmn_engine() -> BpmnEngine:
+    @override
+    def from_dict(self, dct: dict, **kwargs) -> Any:
+        self.migrate(dct)
+        return super().from_dict(dct, **kwargs)
+
+
+def create_bpmn_engine(store: AsyncStore) -> BpmnEngine:
     """
     Helper function to create a BpmnEngine
     DI -> Keep creation of the parser and serializer outside `BpmnEngine.__init__()`
@@ -28,7 +44,7 @@ def create_bpmn_engine() -> BpmnEngine:
     validator = BpmnValidator()
     parser = CamundaParser(validator=validator)
     serializer = CamundaSerializer()
-    engine = BpmnEngine(parser, serializer)
+    engine = BpmnEngine(parser, serializer, store)
     return engine
 
 
@@ -39,80 +55,88 @@ class BpmnEngine:
 
     def __init__(
         self,
-        parser: BpmnParser,
+        parser: BpmnDmnParser,
         serializer: BpmnWorkflowSerializer,
+        store: AsyncStore,
     ):
         self.parser = parser
         self.serializer = serializer
+        self.store = store
 
-    def add_bpmn(self, bpmn: str | pathlib.Path, is_file: bool = False) -> None:
-        """
-        Add a bpmn definition to the engine.
-
-        Attributes:
-            bpmn: The bpmn definition
-            is_file: Whether `bpmn` is an xml string or file path
-        """
-        if isinstance(bpmn, str) and not is_file:
-            self.parser.add_bpmn_str(bpmn.encode())
-        else:
-            self.parser.add_bpmn_file(bpmn)
-
-    def get_process_ids(self):
-        """
-        Get list of process IDs
-        """
-        return self.parser.get_process_ids()
-
-    def start_workflow(self, process_id: str, data: dict | None = None) -> Workflow:
-        """
-        Create a new workflow for given process_id and start running it
-
-        Attributes:
-            process_id: The id of the process to start
-            data: Optional task data to pass to the workflow
-        """
-        spec = self.parser.get_spec(process_id, required=True)
-        wf_bpmn = BpmnWorkflow(spec)
-        wf = Workflow(wf_bpmn)
-        self._run_workflow(wf, data)
-        return wf
-
-    def resume_workflow(
+    async def add_workflow_spec(
         self,
-        serialization: dict,
-        data: dict | None = None,
-        start_task_id: str | None = None,
-    ) -> Workflow:
-        """
-        Resume a running workflow
+        name: str,
+        bpmn_files: Sequence[Path | str],
+        dmn_files: Sequence[Path | str] | None = None,
+    ) -> SID:
+        def _get_filename(f):
+            if isinstance(f, str):
+                f = Path(f)
+            return str(f.resolve())
 
-        Attributes:
-            serialization: The serialized workflow
+        self.parser.add_bpmn_files(_get_filename(f) for f in bpmn_files)
+        if dmn_files:
+            self.parser.add_dmn_files(_get_filename(f) for f in dmn_files)
+        spec: BpmnProcessSpec = self.parser.get_spec(name)  # pyright: ignore [reportAssignmentType]
+        s_spec: dict = self.serializer.to_dict(spec)  # pyright: ignore [reportAssignmentType]
+        sub_specs: dict[str, BpmnProcessSpec] = self.parser.get_subprocess_specs(name)
+        s_sub_specs = {}
+        for n, sub_spec in sub_specs.items():
+            s_sub_specs[n] = self.serializer.to_dict(sub_spec)
+        sid = await self.store.save_workflow_spec(s_spec, s_sub_specs)
+        return sid
+
+    async def create_workflow(
+        self, spec_id: SID, data: dict | None = None, start: bool = True
+    ) -> SID:
+        """
+        Create a workflow instance for given spec_id
+
+        Arguments:
+            spec_id: The store id or bpmn id of the process spec
             data: Optional task data to pass to the workflow
-            start_task_id: Optional id of the task to start from, otherwise the first task
+            start: Whether to start the workflow immediately, default is True
         """
-        wf = Workflow.create_from_serialization(self.serializer, serialization)
-        self._run_workflow(wf, data, start_task_id)
-        return wf
+        s_spec = await self.store.get_workflow_spec(spec_id)
+        if s_spec is None:
+            raise WorkflowRuntimeError(
+                f"Workflow spec with name or id `{spec_id}` not found"
+            )
+        spec: BpmnProcessSpec = self.serializer.from_dict(s_spec[0])  # pyright: ignore [reportAssignmentType]
+        sub_specs: dict[str, BpmnProcessSpec] = {
+            n: self.serializer.from_dict(s) for n, s in s_spec[1].items()
+        }  # pyright: ignore [reportAssignmentType]
+        wf_bpmn = BpmnWorkflow(spec, subprocess_specs=sub_specs)
+        if data:
+            for task in wf_bpmn.get_tasks():
+                task_data = data.get(task.task_spec.name)
+                if task_data:
+                    task.set_data(**task_data)
+        if start:
+            wf = Workflow(wf_bpmn)
+            wf.run()
+        s_state: dict = self.serializer.to_dict(wf_bpmn)  # pyright: ignore [reportAssignmentType]
+        sid = await self.store.save_workflow(s_state)
+        return sid
 
-    def serialize_workflow(self, workflow: Workflow) -> dict:
-        return workflow.serialize(self.serializer)
-
-    def _run_workflow(
-        self,
-        workflow: Workflow,
-        data: dict | None = None,
-        start_task_id: str | None = None,
+    async def continue_workflow(
+        self, workflow_id: SID, data: dict | None = None
     ) -> None:
-        try:
-            workflow.run(data, start_task_id)
-        except UserTaskFormValidationError as e:
-            logger.error(str(e))
-            # TODO: do something with the validation errors
-        except Exception as e:
-            logger.error(str(e))
-            raise e
+        """
+        Continue a running workflow
+
+        Arguments:
+            workflow_id: Store id of the workflow instance
+            data: Optional task data to pass to the workflow
+        """
+        s_state = await self.store.get_workflow(workflow_id)
+        if s_state is None:
+            raise WorkflowRuntimeError(f"Workflow with id `{workflow_id}` not found")
+        wf_bpmn: BpmnWorkflow = self.serializer.from_dict(s_state)  # pyright: ignore [reportAssignmentType]
+        wf = Workflow(wf_bpmn)
+        wf.run(data)
+        s_state_new: dict = self.serializer.to_dict(wf_bpmn)  # pyright: ignore [reportAssignmentType]
+        await self.store.save_workflow(s_state_new, workflow_id)
 
 
 class Workflow:
@@ -120,25 +144,17 @@ class Workflow:
     Wraps a bpmn workflow.
     """
 
-    def __init__(self, workflow: BpmnWorkflow) -> None:
-        self.bpmn_workflow = workflow
-
-    @classmethod
-    def create_from_serialization(
-        cls,
-        serializer: BpmnWorkflowSerializer,
-        serialization: dict,
-    ) -> Self:
-        wf_bpmn = serializer.deserialize_json(serialization)
-        return cls(wf_bpmn)  # pyright: ignore [reportArgumentType]
+    def __init__(self, bpmn_workflow: BpmnWorkflow) -> None:
+        self.bpmn_workflow = bpmn_workflow
 
     def run(self, data: dict | None = None, start_task_id: str | None = None) -> None:
         """
         Run a workflow to the next state
-        Calls `Task.run` on all ready tasks until we enter a waiting state.
+        Calls `Task.run()` on all ready tasks until we enter a waiting state.
 
         Arguments:
             data: a dictionary containing data for tasks, keys correspond to the task name
+            start_task_id: the id of the task to start from, if None, starts from the beginning
         """
 
         if self.is_completed():
@@ -151,24 +167,31 @@ class Workflow:
             else None
         )
         self.run_engine_tasks(data, start_task)
-        # while there's a ready user task, attempt to complete it
-        while task := self.get_next_user_task(start_task):
-            logger.debug(f"Attempting to complete user task `{task.task_spec.name}`")
-            # task data is taken from the data dict using the task spec name as key
-            task_data = data.get(task.task_spec.name)
-            if isinstance(task.task_spec, CamundaUserTask):
-                validator = CamundaFormValidator(task.task_spec.form)
-                errors = validator.validate(task_data or {})
-                if errors:
-                    logger.debug(
-                        f"Could not complete user task `{task.task_spec.name}` due to form validation errors: {errors}"
-                    )
-                    raise UserTaskFormValidationError(task.task_spec.name, errors)
-            if task_data:
-                task.set_data(**task_data)
-            task.run()
-            start_task = task  # start at the just completed task
-            self.run_engine_tasks(data, start_task)
+        try:
+            # while there's a ready user task, attempt to complete it
+            while task := self.get_next_user_task(start_task):
+                logger.debug(
+                    f"Attempting to complete user task `{task.task_spec.name}`"
+                )
+                # task data is taken from the data dict using the task spec name as key
+                task_data = data.get(task.task_spec.name)
+                if isinstance(task.task_spec, CamundaUserTask):
+                    validator = CamundaFormValidator(task.task_spec.form)
+                    errors = validator.validate(task_data or {})
+                    if errors:
+                        logger.debug(
+                            f"Could not complete user task `{task.task_spec.name}` due to form validation errors: {errors}"
+                        )
+                        raise UserTaskFormValidationError(task.task_spec.name, errors)
+                if task_data:
+                    task.set_data(**task_data)
+                task.run()
+                start_task = task  # start at the just completed task
+                self.run_engine_tasks(data, start_task)
+        except UserTaskFormValidationError as e:
+            logger.warning(str(e))
+        except Exception as e:
+            logger.exception(str(e))
 
     def is_completed(self) -> bool:
         return self.bpmn_workflow.is_completed()
@@ -214,9 +237,6 @@ class Workflow:
             start_task, state=TaskState.NOT_FINISHED_MASK, manual=True
         )
 
-    def serialize(self, serializer: BpmnWorkflowSerializer) -> dict:
-        return serializer.serialize_json(self.bpmn_workflow)  # pyright: ignore [reportReturnType]
-
 
 class CamundaFormValidator:
     """
@@ -237,7 +257,7 @@ class CamundaFormValidator:
 
     def validate_field(self, field: CamundaFormField, value: Any) -> list[str]:
         errors = []
-        constraints = {v.name for v in field.validation}
+        constraints = (v.name for v in field.validation)
         for name in constraints:
             config = field.get_validation(name)
             if config is None:
@@ -259,9 +279,9 @@ class CamundaFormValidator:
 
     def _validate_required(self, config: str, value: Any):
         # any of these is considered false so value is not required i.e. field is optional
-        if config in ("", "0", "false", "False", "FALSE"):
+        if config.lower() in ("0", "false", "no"):
             return
-        if bool(config) is not bool(value):
+        if not value:
             return "Value is required"
 
     def _validate_length(self, config: str, value: Any) -> str | None:
@@ -308,14 +328,15 @@ class CamundaFormValidator:
         config = config.strip()
         if not config:
             raise SkipValidation()
-        if not re.match(config, str(value), re.IGNORECASE | re.DOTALL):
+        if not re.match(config, str(value) if value else "", re.IGNORECASE | re.DOTALL):
             return f"Value does not match pattern {config}"
 
     def _warn_skip_validation(
         self, field: str, constraint: str, config: str, reason: str | None = None
     ) -> None:
         logger.warning(
-            f"Field validation constraint `{constraint}` with config `{config}` skipped on field `{field}`{': ' + reason if reason else ''}"
+            f"Field validation constraint `{constraint}` with config `{config}` skipped on field `{field}`"
+            f"{': ' + reason if reason else ''}"
         )
 
 
@@ -333,7 +354,7 @@ class SkipValidation(Exception):
 
 class WorkflowRuntimeError(Exception):
     """
-    Common base class for all workflow runtime errors.
+    Base class for engine runtime errors.
     """
 
 

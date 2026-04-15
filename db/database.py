@@ -1,10 +1,9 @@
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from db.models import Base
-from db.repository import RepositoryManager
 
 engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3", echo=True)
 AsyncSessionLocal = async_sessionmaker(engine, autoflush=True, expire_on_commit=False)
@@ -24,14 +23,6 @@ class Database:
             await conn.run_sync(Base.metadata.drop_all)
 
     @asynccontextmanager
-    async def repository_manager(self) -> AsyncIterator[RepositoryManager]:
-        """
-        Usage:
-            ```python
-            async with self.repository_manager() as repos:
-                x_repo = repos.get(XRepository)
-                x1 = await x_repo.get(pk=1)
-            ```
-        """
+    async def session(self) -> AsyncIterator[AsyncSession]:
         async with AsyncSessionLocal() as session:
-            yield RepositoryManager(session)
+            yield session
