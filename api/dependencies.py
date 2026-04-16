@@ -22,7 +22,7 @@ DependsAsyncSession = Annotated[AsyncSession, Depends(get_session)]
 def get_bpmn_engine(session: DependsAsyncSession) -> BpmnEngine:
     store = SqlAlchemyDatabaseStore(session)
     event_dispatcher = AsyncEventDispatcher()
-    return create_bpmn_engine(store, event_dispatcher)
+    return create_bpmn_engine(store, event_dispatcher)  # pyright: ignore [reportArgumentType]
 
 
 DependsBpmnEngine = Annotated[BpmnEngine, Depends(get_bpmn_engine)]

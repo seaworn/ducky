@@ -223,12 +223,14 @@ class BpmnEngineEvent(Event):
     Base class for bpmn engine events.
     """
 
+    name: str
+
     def __init__(self, event_data: dict[str, Any]):
         super().__init__()
         self.data = event_data
 
     def __str__(self) -> str:
-        return f"<{fqn(self)} data={self.data}>"
+        return f"<{fqn(self)} name={self.name} data={self.data}>"
 
 
 class CamundaSerializer(BpmnWorkflowSerializer):

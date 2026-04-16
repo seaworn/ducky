@@ -31,7 +31,7 @@ async def _add(args):
         bpmn_files.extend(args.bpmn_files)
     async with db.session() as session, session.begin():
         store = SqlAlchemyDatabaseStore(session)
-        engine = create_bpmn_engine(store, event_dispatcher)
+        engine = create_bpmn_engine(store, event_dispatcher)  # pyright: ignore [reportArgumentType]
         sid = await engine.add_workflow_spec(args.name, bpmn_files, args.dmn_files)
         logger.info(f"Added workflow spec: name={args.name}, sid={sid}")
 
@@ -39,7 +39,7 @@ async def _add(args):
 async def _create(args):
     async with db.session() as session, session.begin():
         store = SqlAlchemyDatabaseStore(session)
-        engine = create_bpmn_engine(store, event_dispatcher)
+        engine = create_bpmn_engine(store, event_dispatcher)  # pyright: ignore [reportArgumentType]
         sid = await engine.create_workflow(args.name, data=args.data, start=args.start)
         logger.info(f"Created workflow instance: name={args.name}, sid={sid}")
 
@@ -47,7 +47,7 @@ async def _create(args):
 async def _run(args):
     async with db.session() as session, session.begin():
         store = SqlAlchemyDatabaseStore(session)
-        engine = create_bpmn_engine(store, event_dispatcher)
+        engine = create_bpmn_engine(store, event_dispatcher)  # pyright: ignore [reportArgumentType]
         await engine.continue_workflow(args.id, data=args.data)
         workflow = await session.get_one(models.BpmnWorkflow, args.id)
         logger.info(
